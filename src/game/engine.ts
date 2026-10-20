@@ -68,6 +68,9 @@ export class GameEngine {
   private onMetricsUpdate?: (metrics: GameMetrics) => void;
   private onMilestoneNotice?: (text: string) => void;
 
+  // High-DPI display scale ratio
+  private dpr: number = 1;
+
   constructor(
     canvas: HTMLCanvasElement,
     options?: {
@@ -77,9 +80,8 @@ export class GameEngine {
     }
   ) {
     this.canvas = canvas;
-    this.canvas.width = CANVAS_WIDTH;
-    this.canvas.height = CANVAS_HEIGHT;
     this.renderer = new GameRenderer(canvas);
+    this.resize();
 
     this.onStateChange = options?.onStateChange;
     this.onMetricsUpdate = options?.onMetricsUpdate;
@@ -92,6 +94,29 @@ export class GameEngine {
     }
 
     this.resetGame();
+  }
+
+  // Handle display resize & high-density pixel ratio safely
+  public resize(customDpr?: number) {
+    try {
+      if (!this.canvas) return;
+      const dpr = customDpr || Math.min(window.devicePixelRatio || 1, 3);
+      this.dpr = dpr > 0 ? dpr : 1;
+      this.canvas.width = Math.round(CANVAS_WIDTH * this.dpr);
+      this.canvas.height = Math.round(CANVAS_HEIGHT * this.dpr);
+
+      if (this.state === 'START') {
+        this.renderPreviewFrame();
+      } else if (this.state === 'PAUSED' || this.state === 'GAMEOVER') {
+        this.draw(0);
+      }
+    } catch {
+      // Fallback safely to original dimensions
+      if (this.canvas) {
+        this.canvas.width = CANVAS_WIDTH;
+        this.canvas.height = CANVAS_HEIGHT;
+      }
+    }
   }
 
   // Reset all game state for a new run
@@ -151,14 +176,28 @@ export class GameEngine {
   // Pause the game
   public togglePause() {
     if (this.state === 'PLAYING') {
+      this.pause();
+    } else if (this.state === 'PAUSED') {
+      this.resume();
+    }
+  }
+
+  // Explicit Pause (e.g. for orientation change to portrait or background tab)
+  public pause() {
+    if (this.state === 'PLAYING') {
       this.state = 'PAUSED';
       sound.setPaused(true);
-      sound.stopBGM();
+      sound.pauseBGM();
       if (this.onStateChange) this.onStateChange('PAUSED');
-    } else if (this.state === 'PAUSED') {
+    }
+  }
+
+  // Explicit Resume (e.g. for orientation change back to landscape)
+  public resume() {
+    if (this.state === 'PAUSED') {
       this.state = 'PLAYING';
       sound.setPaused(false);
-      sound.startBGM();
+      sound.resumeBGM();
       this.lastTime = performance.now();
       if (this.onStateChange) this.onStateChange('PLAYING');
       this.runLoop();
@@ -492,7 +531,7 @@ export class GameEngine {
     this.boy.rotation = 0; // Freeze boy orientation in collision posture
     this.currentSpeed = 0; // Freeze world movement
 
-    sound.stopBGM();
+    sound.pauseBGM();
     sound.playEnd();
 
     // Sharp camera impact jolt
@@ -612,6 +651,7 @@ export class GameEngine {
     if (!ctx) return;
 
     ctx.save();
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
 
     // Camera shake on collision
     if (this.screenShake > 0) {
@@ -643,6 +683,9 @@ export class GameEngine {
   public renderPreviewFrame() {
     const ctx = this.canvas.getContext('2d');
     if (!ctx) return;
+
+    ctx.save();
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
 
     // Reset positions for hero preview (relaxed standing idle pose)
     this.boy.y = GROUND_Y - this.boy.height;
@@ -691,6 +734,8 @@ export class GameEngine {
       0.016,
       false
     );
+
+    ctx.restore();
   }
 
   // Notify UI

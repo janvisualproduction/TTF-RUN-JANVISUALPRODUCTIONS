@@ -9,6 +9,13 @@ import { GameOverScreen } from './components/GameOverScreen';
 import { PauseScreen } from './components/PauseScreen';
 import { MilestoneToast } from './components/MilestoneToast';
 import { LoadingScreen } from './components/LoadingScreen';
+import { RotateOverlay } from './components/RotateOverlay';
+import { TouchControls } from './components/TouchControls';
+import {
+  isTouchDevice,
+  isPortraitMobile,
+  requestMobileFullscreenAndOrientation,
+} from './utils/device';
 
 export function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -29,6 +36,11 @@ export function App() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastTimeoutRef = useRef<number | null>(null);
 
+  // Safe device detection & orientation state
+  const [isTouch, setIsTouch] = useState<boolean>(() => isTouchDevice());
+  const [isPortrait, setIsPortrait] = useState<boolean>(() => isPortraitMobile());
+  const wasPlayingBeforeRotateRef = useRef<boolean>(false);
+
   // Show floating milestone notice
   const handleMilestoneNotice = useCallback((text: string) => {
     setToastMessage(text);
@@ -44,20 +56,24 @@ export function App() {
   useEffect(() => {
     if (!canvasRef.current) return;
 
-    const engine = new GameEngine(canvasRef.current, {
-      onStateChange: (state) => setGameState(state),
-      onMetricsUpdate: (newMetrics) => setMetrics(newMetrics),
-      onMilestoneNotice: handleMilestoneNotice,
-    });
+    try {
+      const engine = new GameEngine(canvasRef.current, {
+        onStateChange: (state) => setGameState(state),
+        onMetricsUpdate: (newMetrics) => setMetrics(newMetrics),
+        onMilestoneNotice: handleMilestoneNotice,
+      });
 
-    engineRef.current = engine;
+      engineRef.current = engine;
 
-    // Render preview scene on start screen
-    engine.renderPreviewFrame();
+      // Render preview scene on start screen
+      engine.renderPreviewFrame();
 
-    return () => {
-      engine.destroy();
-    };
+      return () => {
+        engine.destroy();
+      };
+    } catch (err) {
+      console.error('Failed to initialize GameEngine:', err);
+    }
   }, [handleMilestoneNotice]);
 
   // Loading animation timer
@@ -68,7 +84,88 @@ export function App() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Handle keyboard inputs
+  // Viewport dimensions, CSS variables & orientation change listeners
+  useEffect(() => {
+    const updateDimensions = () => {
+      try {
+        const touch = isTouchDevice();
+        setIsTouch(touch);
+
+        // Portrait overlay check runs ONLY for touch devices
+        const portrait = isPortraitMobile();
+        setIsPortrait(portrait);
+
+        // Update CSS variable --app-height for reliable mobile viewport height
+        const vh = window.innerHeight;
+        if (vh > 0) {
+          document.documentElement.style.setProperty('--app-height', `${vh}px`);
+        }
+
+        // Inform engine of resize/DPR change
+        if (engineRef.current) {
+          engineRef.current.resize();
+        }
+      } catch {
+        // Silently safeguard against measurement errors
+      }
+    };
+
+    updateDimensions();
+
+    window.addEventListener('resize', updateDimensions);
+    window.addEventListener('orientationchange', updateDimensions);
+
+    return () => {
+      window.removeEventListener('resize', updateDimensions);
+      window.removeEventListener('orientationchange', updateDimensions);
+    };
+  }, []);
+
+  // Automatic pause & resume when mobile device is rotated
+  useEffect(() => {
+    if (!isTouch) return;
+
+    if (isPortrait) {
+      // Rotated to portrait: pause if currently running
+      if (gameState === 'PLAYING') {
+        wasPlayingBeforeRotateRef.current = true;
+        if (engineRef.current) {
+          engineRef.current.pause();
+        }
+      }
+    } else {
+      // Rotated back to landscape: resume if was previously running
+      if (wasPlayingBeforeRotateRef.current) {
+        wasPlayingBeforeRotateRef.current = false;
+        if (engineRef.current) {
+          engineRef.current.resume();
+        }
+      }
+    }
+  }, [isPortrait, isTouch, gameState]);
+
+  // Handle tab visibility change (pause BGM when tab is hidden, resume when tab is visible again)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      try {
+        if (document.hidden) {
+          sound.pauseBGM();
+        } else {
+          // Resume only if game is currently actively playing and not blocked by rotate overlay
+          if (engineRef.current?.getState() === 'PLAYING' && !isPortrait) {
+            sound.resumeBGM();
+          }
+        }
+      } catch {
+        // Silently safeguard
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [isPortrait]);
+
+  // Handle keyboard inputs on desktop
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!engineRef.current) return;
@@ -100,14 +197,14 @@ export function App() {
 
   // Touch / Click Handler for Game Container
   const handleContainerInteraction = (e: React.MouseEvent | React.TouchEvent) => {
-    // Avoid triggering jump if clicked on interactive buttons
+    // Avoid triggering jump if clicked on interactive buttons or controls
     const target = e.target as HTMLElement;
-    if (target.closest('button') || target.closest('a')) {
+    if (target.closest('button') || target.closest('a') || target.closest('.touch-btn')) {
       return;
     }
 
-    if (e.type === 'touchstart') {
-      // Prevent double firing or scrolling
+    // Only preventDefault on touch events
+    if (e.type === 'touchstart' && (e as React.TouchEvent).cancelable) {
       e.preventDefault();
     }
 
@@ -117,12 +214,19 @@ export function App() {
   };
 
   const handleStartGame = () => {
+    // Attempt mobile orientation lock & fullscreen only on touch devices within direct tap gesture
+    if (isTouch) {
+      requestMobileFullscreenAndOrientation();
+    }
     if (engineRef.current) {
       engineRef.current.start();
     }
   };
 
   const handleRestartGame = () => {
+    if (isTouch) {
+      requestMobileFullscreenAndOrientation();
+    }
     if (engineRef.current) {
       engineRef.current.start();
     }
@@ -140,16 +244,20 @@ export function App() {
   };
 
   const handleToggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      containerRef.current?.requestFullscreen().catch(() => {});
-    } else {
-      document.exitFullscreen().catch(() => {});
+    try {
+      if (!document.fullscreenElement) {
+        containerRef.current?.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    } catch {
+      // Fallback
     }
   };
 
   return (
-    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '10px' }}>
-      {/* Game Viewport Container */}
+    <div className="game-app-shell">
+      {/* Game Viewport Container (Contain-scaled to preserve 1200:540 aspect ratio) */}
       <div
         ref={containerRef}
         className="game-container"
@@ -182,6 +290,14 @@ export function App() {
         {/* Milestone Toast (50m diamond alerts) */}
         {gameState === 'PLAYING' && <MilestoneToast message={toastMessage} />}
 
+        {/* Mobile On-Screen Touch Controls (shown ONLY on touch devices while playing) */}
+        {isTouch && gameState === 'PLAYING' && (
+          <TouchControls
+            onJump={() => engineRef.current?.jump()}
+            onFastFall={() => engineRef.current?.fastFall()}
+          />
+        )}
+
         {/* Loading Screen with Official Logo */}
         {isLoading && <LoadingScreen />}
 
@@ -207,7 +323,7 @@ export function App() {
         )}
       </div>
 
-      {/* Footer Info */}
+      {/* Footer Info (Desktop friendly) */}
       <footer className="game-footer">
         <div>
           <strong style={{ color: '#38bdf8' }}>TTF RUN 💎</strong> • Jump over police cars, collect diamonds every 50m!
@@ -218,6 +334,11 @@ export function App() {
           <span><kbd style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px', color: '#f8fafc' }}>M</kbd> Mute</span>
         </div>
       </footer>
+
+      {/* Rotate Device to Landscape Overlay (Shown ONLY on mobile phones in portrait mode) */}
+      {isTouch && isPortrait && (
+        <RotateOverlay isGameRunning={gameState === 'PAUSED'} />
+      )}
     </div>
   );
 }

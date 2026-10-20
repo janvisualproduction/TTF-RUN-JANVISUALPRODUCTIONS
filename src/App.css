@@ -1,12 +1,26 @@
 /* TTF RUN - Complete Game UI & Component Styling */
 
+.game-app-shell {
+  width: 100%;
+  height: 100%;
+  height: var(--app-height, 100vh);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  box-sizing: border-box;
+  overflow: hidden;
+  position: relative;
+}
+
 .game-container {
   position: relative;
-  width: 100%;
-  max-width: 1200px;
-  height: 100%;
-  max-height: 540px;
   aspect-ratio: 1200 / 540;
+  /* Contain scaling: fit viewport while preserving aspect ratio */
+  width: min(100%, calc((var(--app-height, 100vh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 48px) * (1200 / 540)));
+  max-width: 1200px;
+  max-height: 540px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -16,13 +30,17 @@
   box-shadow: 0 0 50px rgba(0, 240, 255, 0.2), 0 25px 50px -12px rgba(0, 0, 0, 0.85);
   border: 1px solid rgba(56, 189, 248, 0.3);
   touch-action: none;
+  margin: auto;
 }
 
-@media (max-width: 1240px) {
+@media (max-height: 580px) {
   .game-container {
-    width: 96vw;
-    height: auto;
-    border-radius: 12px;
+    width: min(100%, calc(var(--app-height, 100vh) * (1200 / 540)));
+    max-width: none;
+    max-height: var(--app-height, 100vh);
+    border-radius: 4px;
+    border: none;
+    box-shadow: none;
   }
 }
 
@@ -611,71 +629,342 @@
   text-decoration: underline;
 }
 
-/* Mobile responsive adjustments */
-@media (max-width: 640px) {
-  .hud-bar {
-    padding: 8px 10px;
-  }
-  .hud-stat-box {
-    padding: 4px 8px;
-    min-width: 60px;
-  }
-  .hud-stat-label {
-    font-size: 0.58rem;
-  }
-  .hud-stat-value {
-    font-size: 0.85rem;
-  }
-  .modal-card {
-    padding: 20px 16px;
-    border-radius: 18px;
-  }
-  .main-menu-card {
-    padding: 16px 14px 14px;
-  }
-  .main-logo-container {
-    max-width: 160px;
-    margin-bottom: 4px;
-  }
-  .gameover-logo-container {
-    width: 85px;
-    height: 85px;
-    margin-bottom: 4px;
-  }
-  .loading-logo-wrapper {
-    width: 150px;
-    height: 150px;
-  }
-  .modal-title {
-    font-size: 1.85rem;
-  }
-  .features-grid {
-    grid-template-columns: 1fr;
-    gap: 8px;
-    margin-bottom: 18px;
-  }
-  .feature-pill {
-    flex-direction: row;
-    text-align: left;
-    padding: 8px 12px;
-    gap: 10px;
-  }
-  .stats-grid {
-    gap: 8px;
-    margin-bottom: 18px;
-  }
-  .stat-card-value {
-    font-size: 1.15rem;
-  }
-  .btn-primary {
-    padding: 12px 24px;
-    font-size: 1rem;
-    width: 100%;
-  }
-  .modal-actions {
-    flex-direction: column;
-  }
-  .modal-actions button {
-    width: 100%;
+/* Mobile Touch Controls Layer */
+.touch-controls-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 28;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 0 max(16px, env(safe-area-inset-right, 0px)) max(14px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+
+.touch-control-zone {
+  pointer-events: auto;
+}
+
+.touch-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border-radius: 18px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  touch-action: none;
+  cursor: pointer;
+  transition: transform 0.08s ease, background 0.15s ease, border-color 0.15s ease;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.touch-btn:active {
+  transform: scale(0.92);
+}
+
+/* Primary Jump Button: Bottom-Right */
+.touch-btn-jump {
+  width: 68px;
+  height: 68px;
+  min-width: 56px;
+  min-height: 56px;
+  background: rgba(6, 182, 212, 0.28);
+  border: 2px solid rgba(0, 240, 255, 0.7);
+  color: #00f0ff;
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.35);
+}
+
+.touch-btn-jump:active {
+  background: rgba(6, 182, 212, 0.45);
+  box-shadow: 0 0 30px rgba(0, 240, 255, 0.6);
+}
+
+/* Dive / Fast Fall Button: Bottom-Left */
+.touch-btn-dive {
+  width: 58px;
+  height: 58px;
+  min-width: 56px;
+  min-height: 56px;
+  background: rgba(245, 158, 11, 0.22);
+  border: 2px solid rgba(251, 191, 36, 0.6);
+  color: #fbbf24;
+  box-shadow: 0 0 16px rgba(251, 191, 36, 0.3);
+}
+
+.touch-btn-dive:active {
+  background: rgba(245, 158, 11, 0.38);
+  box-shadow: 0 0 25px rgba(251, 191, 36, 0.5);
+}
+
+.touch-btn-label {
+  font-family: var(--font-arcade);
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+/* Hide touch buttons completely on desktop mouse users */
+@media (hover: hover) and (pointer: fine) {
+  .touch-controls-layer {
+    display: none !important;
   }
 }
+
+/* Rotate Device to Landscape Overlay (Only active for touch devices in portrait) */
+.rotate-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(4, 7, 18, 0.96);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.rotate-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 340px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  border-radius: 24px;
+  padding: 32px 24px;
+  box-shadow: 0 0 45px rgba(0, 240, 255, 0.25);
+}
+
+.rotate-phone-wrapper {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.rotate-phone-icon {
+  animation: rotatePhone 2.6s infinite ease-in-out;
+  filter: drop-shadow(0 0 16px rgba(0, 240, 255, 0.6));
+}
+
+@keyframes rotatePhone {
+  0%, 20% {
+    transform: rotate(0deg);
+  }
+  45%, 75% {
+    transform: rotate(-90deg);
+  }
+  95%, 100% {
+    transform: rotate(0deg);
+  }
+}
+
+.rotate-arrow-indicator {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  background: rgba(15, 23, 42, 0.85);
+  border-radius: 50%;
+  padding: 4px;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+}
+
+.rotate-arrow-spin {
+  animation: spinClockwise 3s linear infinite;
+}
+
+@keyframes spinClockwise {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.rotate-title {
+  font-family: var(--font-arcade);
+  font-size: 1.35rem;
+  font-weight: 900;
+  color: #00f0ff;
+  letter-spacing: 0.06em;
+  margin-bottom: 10px;
+  text-shadow: 0 0 15px rgba(0, 240, 255, 0.5);
+}
+
+.rotate-subtitle {
+  font-size: 0.88rem;
+  color: #cbd5e1;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+.rotate-paused-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(239, 68, 68, 0.18);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  color: #fca5a5;
+  font-family: var(--font-arcade);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 6px 14px;
+  border-radius: 9999px;
+}
+
+.pulsing-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  box-shadow: 0 0 8px #ef4444;
+  animation: pulseGlow 1.2s infinite ease-in-out;
+}
+
+/* Compact Landscape Mobile Scaling (Height <= 480px) */
+@media (max-height: 480px) {
+  .hud-bar {
+    padding: 4px 12px;
+    padding-left: max(12px, env(safe-area-inset-left, 0px));
+    padding-right: max(12px, env(safe-area-inset-right, 0px));
+  }
+  .hud-brand {
+    font-size: 0.8rem;
+  }
+  .hud-mini-logo {
+    width: 20px;
+    height: 20px;
+  }
+  .hud-speed-badge {
+    padding: 3px 8px;
+    font-size: 0.65rem;
+  }
+  .hud-stat-box {
+    padding: 2px 8px;
+    min-width: 52px;
+    border-radius: 8px;
+  }
+  .hud-stat-label {
+    font-size: 0.52rem;
+  }
+  .hud-stat-value {
+    font-size: 0.82rem;
+  }
+  .btn-icon {
+    width: 34px;
+    height: 34px;
+  }
+  .milestone-toast-container {
+    top: 45px;
+  }
+  .milestone-toast {
+    padding: 4px 14px;
+    font-size: 0.72rem;
+  }
+
+  /* Modals */
+  .modal-overlay {
+    padding: 8px;
+  }
+  .modal-card {
+    padding: 10px 18px;
+    max-width: 500px;
+    border-radius: 16px;
+    max-height: 94%;
+    overflow-y: auto;
+  }
+  .main-menu-card {
+    padding: 10px 18px;
+  }
+  .main-logo-container {
+    max-width: 76px;
+    margin-bottom: 2px;
+  }
+  .record-badge {
+    font-size: 0.65rem;
+    padding: 2px 8px;
+    margin-bottom: 4px;
+  }
+  .modal-subtitle {
+    font-size: 0.72rem;
+    margin-bottom: 6px;
+  }
+  .main-play-btn {
+    font-size: 0.95rem;
+    padding: 8px 28px;
+    margin-bottom: 6px;
+  }
+  .features-grid {
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+  .feature-pill {
+    padding: 3px 6px;
+    gap: 2px;
+    border-radius: 8px;
+  }
+  .feature-icon-wrap {
+    width: 22px;
+    height: 22px;
+  }
+  .feature-title {
+    font-size: 0.62rem;
+  }
+  .feature-desc {
+    display: none;
+  }
+  .controls-info {
+    margin-top: 4px;
+    padding-top: 4px;
+    font-size: 0.65rem;
+  }
+
+  /* Game Over Screen */
+  .gameover-logo-container {
+    width: 48px;
+    height: 48px;
+    margin-bottom: 2px;
+  }
+  .modal-title {
+    font-size: 1.4rem;
+    margin-bottom: 2px;
+  }
+  .modal-title.danger-title {
+    font-size: 1.35rem;
+  }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+  .stat-card {
+    padding: 4px 8px;
+    border-radius: 10px;
+  }
+  .stat-card-label {
+    font-size: 0.54rem;
+  }
+  .stat-card-value {
+    font-size: 0.92rem;
+    margin-top: 2px;
+  }
+  .modal-actions {
+    gap: 8px;
+  }
+  .modal-actions button {
+    padding: 8px 20px;
+    font-size: 0.88rem;
+  }
+}
+

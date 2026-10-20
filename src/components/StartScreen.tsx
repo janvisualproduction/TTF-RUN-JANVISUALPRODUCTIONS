@@ -1,5 +1,5 @@
 import React from 'react';
-import { Play, Trophy, Sparkles, ShieldAlert, Smartphone, Keyboard } from 'lucide-react';
+import { Play, Trophy, Smartphone, Keyboard } from 'lucide-react';
 
 interface StartScreenProps {
   bestScore: number;
@@ -46,33 +46,6 @@ export const StartScreen: React.FC<StartScreenProps> = ({ bestScore, onPlay }) =
           <Play size={22} fill="currentColor" />
           <span>PLAY NOW</span>
         </button>
-
-        {/* Feature Highlights */}
-        <div className="features-grid">
-          <div className="feature-pill">
-            <div className="feature-icon-wrap">
-              <Sparkles size={16} />
-            </div>
-            <div className="feature-title">Glowing Diamond</div>
-            <div className="feature-desc">Always in hand</div>
-          </div>
-
-          <div className="feature-pill">
-            <div className="feature-icon-wrap" style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444' }}>
-              <ShieldAlert size={16} />
-            </div>
-            <div className="feature-title">Police Patrols</div>
-            <div className="feature-desc">Jump over sirens</div>
-          </div>
-
-          <div className="feature-pill">
-            <div className="feature-icon-wrap" style={{ background: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24' }}>
-              <span>💎</span>
-            </div>
-            <div className="feature-title">50m Milestone</div>
-            <div className="feature-desc">Collect bonuses</div>
-          </div>
-        </div>
 
         {/* Controls Info Box */}
         <div className="controls-info">

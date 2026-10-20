@@ -1,35 +1,42 @@
 // Centralized Audio Manager for TTF RUN 💎
-// Handles external SFX assets (Jump, End) with audio pooling, preloading,
-// autoplay unlocking, error handling, volume control, and synthesized sound effects.
+// Handles background music (BGM) and external SFX assets (Jump, End) with audio pooling,
+// preloading, autoplay unlocking, error handling, and volume control.
+
+// Centralized easy-to-change volume constant (exact 50% volume requested)
+export const BGM_VOLUME = 0.5;
 
 export interface AudioVolumes {
+  bgm: number;
   jump: number;
   end: number;
 }
 
 const AUDIO_CONFIG = {
+  bgmUrl: '/assets/audio/bgm.mp3',
   jumpUrl: '/assets/audio/Jump.mp3',
   endUrl: '/assets/audio/End.mp3',
+  bgmVolume: BGM_VOLUME,
   jumpVolume: 0.6,
   endVolume: 0.8,
   jumpPoolSize: 6,
 };
 
 class SoundSystem {
-  // Web Audio Context for synthesized effects & background pulse
+  // Web Audio Context for synthesized effects & procedural sounds
   private ctx: AudioContext | null = null;
   private isMuted: boolean = false;
   private isPaused: boolean = false;
-  private bgmGain: GainNode | null = null;
   private isBgmPlaying: boolean = false;
-  private bgmTimer: number | null = null;
-  private tempo: number = 124; // BPM for runner rhythm
 
   // Centralized volume configuration
   private volumes: AudioVolumes = {
+    bgm: AUDIO_CONFIG.bgmVolume,
     jump: AUDIO_CONFIG.jumpVolume,
     end: AUDIO_CONFIG.endVolume,
   };
+
+  // Dedicated single HTMLAudioElement for BGM (guarantees never duplicate instances)
+  private bgmAudio: HTMLAudioElement | null = null;
 
   // SFX Audio Elements
   private jumpPool: HTMLAudioElement[] = [];
@@ -55,8 +62,27 @@ class SoundSystem {
 
     try {
       const baseUrl = (import.meta.env?.BASE_URL || '/').replace(/\/$/, '');
+      const bgmSrc = `${baseUrl}${AUDIO_CONFIG.bgmUrl}`;
       const jumpSrc = `${baseUrl}${AUDIO_CONFIG.jumpUrl}`;
       const endSrc = `${baseUrl}${AUDIO_CONFIG.endUrl}`;
+
+      // Preload Background Music (single dedicated HTMLAudioElement instance)
+      this.bgmAudio = new Audio(bgmSrc);
+      this.bgmAudio.preload = 'auto';
+      this.bgmAudio.loop = true;
+      this.bgmAudio.volume = this.volumes.bgm;
+      this.bgmAudio.muted = this.isMuted;
+      // Seamless zero-delay loop listener guarantee across all mobile and desktop browsers
+      this.bgmAudio.addEventListener('ended', () => {
+        if (this.bgmAudio && !this.isMuted && !this.isPaused && this.isBgmPlaying) {
+          this.bgmAudio.currentTime = 0;
+          const p = this.bgmAudio.play();
+          if (p !== undefined) p.catch(() => {});
+        }
+      });
+      try {
+        this.bgmAudio.load();
+      } catch {}
 
       // Create separate audio instances for Jump to allow rapid overlap/restarts
       this.jumpPool = [];
@@ -67,7 +93,7 @@ class SoundSystem {
         audio.muted = this.isMuted;
         try {
           audio.load();
-        } catch (_) {}
+        } catch {}
         this.jumpPool.push(audio);
       }
 
@@ -78,7 +104,7 @@ class SoundSystem {
       this.endAudio.muted = this.isMuted;
       try {
         this.endAudio.load();
-      } catch (_) {}
+      } catch {}
     } catch (err) {
       console.warn('Audio preloading encountered an error:', err);
     }
@@ -120,18 +146,23 @@ class SoundSystem {
       if (this.ctx && this.ctx.state === 'suspended') {
         this.ctx.resume().catch(() => {});
       }
-    } catch (_) {}
+    } catch {}
 
     // Prime audio elements
+    if (this.bgmAudio) {
+      try {
+        this.bgmAudio.load();
+      } catch {}
+    }
     this.jumpPool.forEach((audio) => {
       try {
         audio.load();
-      } catch (_) {}
+      } catch {}
     });
     if (this.endAudio) {
       try {
         this.endAudio.load();
-      } catch (_) {}
+      } catch {}
     }
   }
 
@@ -145,18 +176,23 @@ class SoundSystem {
     this.isMuted = muted;
     try {
       localStorage.setItem('ttf_run_muted', String(muted));
-    } catch (_) {}
+    } catch {}
 
     // Synchronize mute state across all audio elements
+    if (this.bgmAudio) {
+      this.bgmAudio.muted = muted;
+      this.bgmAudio.volume = muted ? 0 : this.volumes.bgm;
+      if (!muted && !this.isPaused && this.isBgmPlaying) {
+        const p = this.bgmAudio.play();
+        if (p !== undefined) p.catch(() => {});
+      }
+    }
+
     this.jumpPool.forEach((audio) => {
       audio.muted = muted;
     });
     if (this.endAudio) {
       this.endAudio.muted = muted;
-    }
-
-    if (this.bgmGain && this.ctx) {
-      this.bgmGain.gain.setValueAtTime(muted ? 0 : 0.12, this.ctx.currentTime);
     }
   }
 
@@ -172,7 +208,12 @@ class SoundSystem {
       if (this.endAudio && !this.endAudio.paused) {
         try {
           this.endAudio.pause();
-        } catch (_) {}
+        } catch {}
+      }
+      this.pauseBGM();
+    } else {
+      if (this.isBgmPlaying) {
+        this.resumeBGM();
       }
     }
   }
@@ -184,6 +225,13 @@ class SoundSystem {
   // Volume getters and setters (easy to change in one place)
   public getVolumes(): AudioVolumes {
     return { ...this.volumes };
+  }
+
+  public setBgmVolume(volume: number) {
+    this.volumes.bgm = Math.max(0, Math.min(1, volume));
+    if (this.bgmAudio) {
+      this.bgmAudio.volume = this.isMuted ? 0 : this.volumes.bgm;
+    }
   }
 
   public setJumpVolume(volume: number) {
@@ -283,7 +331,7 @@ class SoundSystem {
       try {
         audio.pause();
         audio.currentTime = 0;
-      } catch (_) {}
+      } catch {}
     });
   }
 
@@ -297,7 +345,7 @@ class SoundSystem {
       try {
         this.endAudio.pause();
         this.endAudio.currentTime = 0;
-      } catch (_) {}
+      } catch {}
     }
   }
 
@@ -330,7 +378,7 @@ class SoundSystem {
 
       osc.start(t);
       osc.stop(t + 0.06);
-    } catch (_) {}
+    } catch {}
   }
 
   // Diamond Collect Sound (sparkle arpeggio)
@@ -360,7 +408,7 @@ class SoundSystem {
         osc.start(noteTime);
         osc.stop(noteTime + 0.3);
       });
-    } catch (_) {}
+    } catch {}
   }
 
   // Police Siren Alert
@@ -392,7 +440,7 @@ class SoundSystem {
 
       osc.start(t);
       osc.stop(t + 0.36);
-    } catch (_) {}
+    } catch {}
   }
 
   // Game Start Fanfare
@@ -422,7 +470,7 @@ class SoundSystem {
         osc.start(noteTime);
         osc.stop(noteTime + 0.24);
       });
-    } catch (_) {}
+    } catch {}
   }
 
   // Milestone Fanfare
@@ -452,89 +500,93 @@ class SoundSystem {
         osc.start(noteTime);
         osc.stop(noteTime + 0.35);
       });
-    } catch (_) {}
+    } catch {}
   }
 
-  // Background Synthwave Pulse
-  public startBGM() {
-    if (this.isBgmPlaying) return;
+  // ===================== BACKGROUND MUSIC (BGM) =====================
+
+  /**
+   * Starts or restarts background music loop at 50% volume (BGM_VOLUME = 0.5).
+   * @param fromBeginning - true resets track position to 0; false resumes from current position
+   */
+  public startBGM(fromBeginning: boolean = true) {
     this.unlockAudio();
-    if (!this.ctx) return;
-
     this.isBgmPlaying = true;
-    let step = 0;
-    const bassNotes = [55, 55, 65.41, 73.42, 55, 55, 82.41, 73.42];
+    if (!this.bgmAudio) return;
 
-    const tick = () => {
-      if (!this.isBgmPlaying || !this.ctx) return;
-      const t = this.ctx.currentTime;
+    try {
+      if (fromBeginning) {
+        this.bgmAudio.currentTime = 0;
+      }
+      this.bgmAudio.volume = this.isMuted ? 0 : this.volumes.bgm;
+      this.bgmAudio.loop = true;
+      this.bgmAudio.muted = this.isMuted;
 
       if (!this.isMuted && !this.isPaused) {
-        try {
-          const osc = this.ctx.createOscillator();
-          const gain = this.ctx.createGain();
-          const noteFreq = bassNotes[step % bassNotes.length];
-
-          osc.type = 'sawtooth';
-          osc.frequency.setValueAtTime(noteFreq, t);
-
-          const filter = this.ctx.createBiquadFilter();
-          filter.type = 'lowpass';
-          filter.frequency.setValueAtTime(320, t);
-
-          gain.gain.setValueAtTime(0.045, t);
-          gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
-
-          osc.connect(filter);
-          filter.connect(gain);
-          gain.connect(this.ctx.destination);
-
-          osc.start(t);
-          osc.stop(t + 0.14);
-
-          if (step % 2 === 1) {
-            const hatOsc = this.ctx.createOscillator();
-            const hatFilter = this.ctx.createBiquadFilter();
-            const hatGain = this.ctx.createGain();
-
-            hatOsc.type = 'square';
-            hatOsc.frequency.setValueAtTime(8000, t);
-
-            hatFilter.type = 'highpass';
-            hatFilter.frequency.setValueAtTime(6000, t);
-
-            hatGain.gain.setValueAtTime(0.012, t);
-            hatGain.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
-
-            hatOsc.connect(hatFilter);
-            hatFilter.connect(hatGain);
-            hatGain.connect(this.ctx.destination);
-
-            hatOsc.start(t);
-            hatOsc.stop(t + 0.05);
-          }
-        } catch (_) {}
+        const playPromise = this.bgmAudio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch((_err) => {
+            // Autoplay policy restriction gracefully handled
+          });
+        }
       }
-
-      step++;
-      const stepDuration = 60 / this.tempo / 2;
-      this.bgmTimer = window.setTimeout(tick, stepDuration * 1000);
-    };
-
-    tick();
-  }
-
-  public stopBGM() {
-    this.isBgmPlaying = false;
-    if (this.bgmTimer !== null) {
-      clearTimeout(this.bgmTimer);
-      this.bgmTimer = null;
+    } catch (err) {
+      console.warn('Error starting BGM:', err);
     }
   }
 
-  public updateTempo(speedRatio: number) {
-    this.tempo = Math.min(150, 124 + (speedRatio - 1) * 20);
+  /**
+   * Pause BGM without resetting track position
+   * Used when game is paused, rotate overlay is visible, browser tab is hidden, or game over.
+   */
+  public pauseBGM() {
+    if (!this.bgmAudio) return;
+    try {
+      this.bgmAudio.pause();
+    } catch {}
+  }
+
+  /**
+   * Resume BGM from current position (only if not muted and not paused)
+   */
+  public resumeBGM() {
+    if (!this.bgmAudio || this.isMuted || this.isPaused || !this.isBgmPlaying) return;
+    try {
+      this.bgmAudio.volume = this.volumes.bgm;
+      this.bgmAudio.muted = this.isMuted;
+      const playPromise = this.bgmAudio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((_err) => {});
+      }
+    } catch {}
+  }
+
+  /**
+   * Stop BGM and rewind to beginning
+   */
+  public stopBGM() {
+    this.isBgmPlaying = false;
+    if (!this.bgmAudio) return;
+    try {
+      this.bgmAudio.pause();
+      this.bgmAudio.currentTime = 0;
+    } catch {}
+  }
+
+  public isMusicPlaying(): boolean {
+    return this.isBgmPlaying && !!this.bgmAudio && !this.bgmAudio.paused;
+  }
+
+  public getBgmAudio(): HTMLAudioElement | null {
+    return this.bgmAudio;
+  }
+
+  public updateTempo(_speedRatio?: number) {
+    // Song plays at fixed master tempo
   }
 }
 
 export const sound = new SoundSystem();
+if (typeof window !== 'undefined') {
+  (window as unknown as { __sound: SoundSystem }).__sound = sound;
+}
