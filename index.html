@@ -7,8 +7,12 @@
   <link rel="apple-touch-icon" href="/assets/ttf-run-logo.png" />
   <link rel="preload" as="image" href="/assets/ttf-vasan-face.png" />
   <meta name="viewport"
-    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <meta name="theme-color" content="#0a0c16" />
+    content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#000000" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="description"
     content="TTF RUN 💎 - Classic side-scrolling endless-runner. Run fast, hold the glowing diamond, jump over police cars, and collect diamonds!" />
   <title>TTF RUN 💎 | Endless Runner</title>
@@ -22,6 +26,15 @@
 
 <body>
   <div id="root"></div>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        try {
+          navigator.serviceWorker.register('/sw.js').catch(function () {});
+        } catch (e) {}
+      });
+    }
+  </script>
   <script type="module" src="/src/main.tsx"></script>
 </body>
 

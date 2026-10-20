@@ -11,10 +11,12 @@ import { MilestoneToast } from './components/MilestoneToast';
 import { LoadingScreen } from './components/LoadingScreen';
 import { RotateOverlay } from './components/RotateOverlay';
 import { TouchControls } from './components/TouchControls';
+import { Maximize } from 'lucide-react';
 import {
+  isMobileDevice,
   isTouchDevice,
   isPortraitMobile,
-  requestMobileFullscreenAndOrientation,
+  enterMobileFullscreen,
 } from './utils/device';
 
 export function App() {
@@ -36,9 +38,11 @@ export function App() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastTimeoutRef = useRef<number | null>(null);
 
-  // Safe device detection & orientation state
+  // Strict mobile touch phone/tablet detection (Rule: (pointer: coarse) && min(w, h) < 900)
+  const [isMobile, setIsMobile] = useState<boolean>(() => isMobileDevice());
   const [isTouch, setIsTouch] = useState<boolean>(() => isTouchDevice());
   const [isPortrait, setIsPortrait] = useState<boolean>(() => isPortraitMobile());
+  const [showFullscreenRestoreBtn, setShowFullscreenRestoreBtn] = useState<boolean>(false);
   const wasPlayingBeforeRotateRef = useRef<boolean>(false);
 
   // Show floating milestone notice
@@ -88,14 +92,17 @@ export function App() {
   useEffect(() => {
     const updateDimensions = () => {
       try {
+        const mobile = isMobileDevice();
+        setIsMobile(mobile);
+
         const touch = isTouchDevice();
         setIsTouch(touch);
 
-        // Portrait overlay check runs ONLY for touch devices
+        // Portrait overlay check runs ONLY for mobile phones
         const portrait = isPortraitMobile();
         setIsPortrait(portrait);
 
-        // Update CSS variable --app-height for reliable mobile viewport height
+        // Real visible height (window.innerHeight) ensures clean full display whether or not browser bar shows
         const vh = window.innerHeight;
         if (vh > 0) {
           document.documentElement.style.setProperty('--app-height', `${vh}px`);
@@ -114,16 +121,57 @@ export function App() {
 
     window.addEventListener('resize', updateDimensions);
     window.addEventListener('orientationchange', updateDimensions);
+    window.visualViewport?.addEventListener('resize', updateDimensions);
 
     return () => {
       window.removeEventListener('resize', updateDimensions);
       window.removeEventListener('orientationchange', updateDimensions);
+      window.visualViewport?.removeEventListener('resize', updateDimensions);
     };
   }, []);
 
+  // Fullscreen on very first touch anywhere on mobile
+  useEffect(() => {
+    if (!isMobile) return;
+
+    const handleFirstTouch = () => {
+      try {
+        enterMobileFullscreen();
+      } catch {}
+    };
+
+    window.addEventListener('touchstart', handleFirstTouch, { capture: true, once: true });
+    return () => {
+      window.removeEventListener('touchstart', handleFirstTouch, { capture: true });
+    };
+  }, [isMobile]);
+
+  // Detect fullscreen exit during active gameplay on mobile (do not auto-pause)
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      try {
+        const doc = document as any;
+        const isFullscreen = !!(document.fullscreenElement || doc.webkitFullscreenElement);
+        if (isMobile && gameState === 'PLAYING' && !isFullscreen) {
+          setShowFullscreenRestoreBtn(true);
+        } else if (isFullscreen) {
+          setShowFullscreenRestoreBtn(false);
+        }
+      } catch {}
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+    };
+  }, [isMobile, gameState]);
+
   // Automatic pause & resume when mobile device is rotated
   useEffect(() => {
-    if (!isTouch) return;
+    if (!isMobile) return;
 
     if (isPortrait) {
       // Rotated to portrait: pause if currently running
@@ -142,7 +190,7 @@ export function App() {
         }
       }
     }
-  }, [isPortrait, isTouch, gameState]);
+  }, [isPortrait, isMobile, gameState]);
 
   // Handle tab visibility change (pause BGM when tab is hidden, resume when tab is visible again)
   useEffect(() => {
@@ -204,8 +252,13 @@ export function App() {
     }
 
     // Only preventDefault on touch events
-    if (e.type === 'touchstart' && (e as React.TouchEvent).cancelable) {
-      e.preventDefault();
+    if (e.type === 'touchstart') {
+      if ((e as React.TouchEvent).cancelable) {
+        e.preventDefault();
+      }
+      if (isMobile) {
+        enterMobileFullscreen();
+      }
     }
 
     if (engineRef.current) {
@@ -214,9 +267,9 @@ export function App() {
   };
 
   const handleStartGame = () => {
-    // Attempt mobile orientation lock & fullscreen only on touch devices within direct tap gesture
-    if (isTouch) {
-      requestMobileFullscreenAndOrientation();
+    // Attempt mobile orientation lock & fullscreen only on mobile touch devices within direct tap gesture
+    if (isMobile) {
+      enterMobileFullscreen();
     }
     if (engineRef.current) {
       engineRef.current.start();
@@ -224,8 +277,8 @@ export function App() {
   };
 
   const handleRestartGame = () => {
-    if (isTouch) {
-      requestMobileFullscreenAndOrientation();
+    if (isMobile) {
+      enterMobileFullscreen();
     }
     if (engineRef.current) {
       engineRef.current.start();
@@ -256,7 +309,7 @@ export function App() {
   };
 
   return (
-    <div className="game-app-shell">
+    <div className={`game-app-shell ${isMobile ? 'is-mobile' : ''}`}>
       {/* Game Viewport Container (Contain-scaled to preserve 1200:540 aspect ratio) */}
       <div
         ref={containerRef}
@@ -287,10 +340,31 @@ export function App() {
           onToggleFullscreen={handleToggleFullscreen}
         />
 
+        {/* Restore Fullscreen Button (Shown on mobile only if player exited fullscreen while game is running) */}
+        {isMobile && showFullscreenRestoreBtn && gameState === 'PLAYING' && (
+          <button
+            className="mobile-restore-fullscreen-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              enterMobileFullscreen();
+              setShowFullscreenRestoreBtn(false);
+            }}
+            onTouchStart={(e) => {
+              e.stopPropagation();
+              enterMobileFullscreen();
+              setShowFullscreenRestoreBtn(false);
+            }}
+            aria-label="Tap to go fullscreen"
+          >
+            <Maximize size={13} />
+            <span>TAP FOR FULLSCREEN</span>
+          </button>
+        )}
+
         {/* Milestone Toast (50m diamond alerts) */}
         {gameState === 'PLAYING' && <MilestoneToast message={toastMessage} />}
 
-        {/* Mobile On-Screen Touch Controls (shown ONLY on touch devices while playing) */}
+        {/* Mobile On-Screen Touch Controls (shown ONLY on mobile touch devices while playing) */}
         {isTouch && gameState === 'PLAYING' && (
           <TouchControls
             onJump={() => engineRef.current?.jump()}
@@ -323,20 +397,22 @@ export function App() {
         )}
       </div>
 
-      {/* Footer Info (Desktop friendly) */}
-      <footer className="game-footer">
-        <div>
-          <strong style={{ color: '#38bdf8' }}>TTF RUN 💎</strong> • Jump over police cars, collect diamonds every 50m!
-        </div>
-        <div style={{ display: 'flex', gap: '14px' }}>
-          <span>Controls: <kbd style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px', color: '#f8fafc' }}>SPACE</kbd> / Tap to Jump</span>
-          <span>•</span>
-          <span><kbd style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px', color: '#f8fafc' }}>M</kbd> Mute</span>
-        </div>
-      </footer>
+      {/* Footer Info (Desktop friendly - hidden completely on mobile phones) */}
+      {!isMobile && (
+        <footer className="game-footer">
+          <div>
+            <strong style={{ color: '#38bdf8' }}>TTF RUN 💎</strong> • Jump over police cars, collect diamonds every 50m!
+          </div>
+          <div style={{ display: 'flex', gap: '14px' }}>
+            <span>Controls: <kbd style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px', color: '#f8fafc' }}>SPACE</kbd> / Tap to Jump</span>
+            <span>•</span>
+            <span><kbd style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px', color: '#f8fafc' }}>M</kbd> Mute</span>
+          </div>
+        </footer>
+      )}
 
       {/* Rotate Device to Landscape Overlay (Shown ONLY on mobile phones in portrait mode) */}
-      {isTouch && isPortrait && (
+      {isMobile && isPortrait && (
         <RotateOverlay isGameRunning={gameState === 'PAUSED'} />
       )}
     </div>

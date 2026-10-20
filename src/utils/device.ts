@@ -1,4 +1,16 @@
 // Safe device & orientation detection for TTF RUN
+export function isMobileDevice(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return (
+      window.matchMedia('(pointer: coarse)').matches &&
+      Math.min(screen.width, screen.height) < 900
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function isTouchDevice(): boolean {
   if (typeof window === 'undefined') return false;
   try {
@@ -16,40 +28,38 @@ export function isPortraitMobile(): boolean {
   if (typeof window === 'undefined') return false;
   try {
     // Desktop or laptop must NEVER see the rotate overlay and must NEVER be paused by it
-    const isTouch = isTouchDevice();
-    if (!isTouch) return false;
+    const isMobile = isMobileDevice();
+    if (!isMobile) return false;
     return window.innerHeight > window.innerWidth;
   } catch {
     return false;
   }
 }
 
-export async function requestMobileFullscreenAndOrientation(): Promise<void> {
-  // Only run when touch is true
-  if (!isTouchDevice()) return;
+export function enterMobileFullscreen(): void {
+  // Mobile touch phones only - do not run on desktop
+  if (!isMobileDevice()) return;
 
-  // 1. Safe requestFullscreen
+  // 1. requestFullscreen (document.documentElement.requestFullscreen with webkit fallback)
   try {
     const docEl = document.documentElement as any;
-    if (!document.fullscreenElement) {
+    if (!document.fullscreenElement && !(document as any).webkitFullscreenElement) {
       if (typeof docEl.requestFullscreen === 'function') {
-        await docEl.requestFullscreen().catch(() => {});
+        docEl.requestFullscreen().catch(() => {});
       } else if (typeof docEl.webkitRequestFullscreen === 'function') {
-        await docEl.webkitRequestFullscreen().catch(() => {});
+        docEl.webkitRequestFullscreen().catch(() => {});
       }
     }
-  } catch {
-    // Silently continue - game must run even if fullscreen fails
-  }
+  } catch {}
 
-  // 2. Safe screen.orientation.lock
+  // 2. screen.orientation.lock('landscape')
   try {
     const screenObj = typeof window !== 'undefined' ? window.screen : undefined;
     const orientation = screenObj?.orientation as any;
     if (orientation && typeof orientation.lock === 'function') {
-      await orientation.lock('landscape').catch(() => {});
+      orientation.lock('landscape').catch(() => {});
     }
-  } catch {
-    // Silently continue - devices like iPhone don't support orientation.lock
-  }
+  } catch {}
 }
+
+export const requestMobileFullscreenAndOrientation = enterMobileFullscreen;
